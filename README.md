@@ -1,2 +1,2 @@
-# netconf2prom
-Prometheus Client with netconf query output
+# ZeroNetconf
+Prometheus Client populated by netconf retrieved data
