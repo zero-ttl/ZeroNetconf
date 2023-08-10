@@ -1,0 +1,16 @@
+AdvertisedRouteTable:
+  rpc: get-route-information
+  args:
+    advertising-protocol-name: bgp
+  args_key:
+    - neighbor
+    - table
+  item: route-table/rt
+  key:
+    - rt-destination
+  view: _AdvertisedRouteView
+
+_AdvertisedRouteView:
+  fields:
+    aspath: rt-entry/as-path
+    med: rt-entry/med
