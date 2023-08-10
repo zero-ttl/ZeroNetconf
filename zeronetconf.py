@@ -68,34 +68,35 @@ def config_parser(filepath):
 
     return sections
 
-class NeighAdvRoutes:
-    #
-    # a Neigh object should store data related to a neighbor
-    #   it can raise ZeroConfException
-    #
-    def __init__(self, device, routername, peerips, table = None):
-        self.routername = routername
-        self.peerips = peerips
+class NeighsAdvRoutes:
+    def __init__(self, user, pwd, router_name, peerips, table = None):
+        self.router_name = router_name
+        self.peer_ips = peerips
         if table:
             self.instance = table
         else:
             self.instance = "inet.0"
 
-        if self.peerips != None:
-            self.routeTable = {}
-            for peerip in self.peerips:
-                self.routeTable[peerip] = {}
-                for k,v in AdvertisedRouteTable(device).get(table=self.instance,neighbor=peerip).items():
-                    self.routeTable[peerip][k[0]] = dict(v)
-        else:
-            raise ZeroConfException('RouteList - Bad Neighbor IP: "%s" ' % self.peerip)
+        dev = Device(host=self.router_name, user=user, passwd=pwd)
+        dev.open()
 
+
+        self.routeTable = {}
+
+        if self.peer_ips != None:
+            for peer_ip in self.peer_ips:
+                self.routeTable[peer_ip] = {}
+                for k,v in AdvertisedRouteTable(dev).get(table=self.instance,neighbor=peer_ip).items():
+                    self.routeTable[peer_ip][k[0]] = dict(v)
+
+        dev.close()
+        #calculate aspath_len
         for peerip in self.routeTable.keys():
             for prefix in self.routeTable[peerip].keys():
                 self.routeTable[peerip][prefix]['aspath_len'] = max(1,len(self.routeTable[peerip][prefix]['aspath'].split())-1)
 
     def getRoutes(self):
-         # Output example
+         # Output example --> routeTable[peerip][prefix][aspath|aspath_len|med]
          # {'10.11.12.0/24': {'aspath': '65000 65000 [65000] I',
          #              'aspath_len': 3,
          #              'med': '150'},
@@ -109,8 +110,14 @@ class ZeroConfException(Exception):
 
 
 if __name__ == '__main__':
-    print("netconf2prom is running")
-    config = config_parser('/config/exporter.conf')
+    print("ZeroNetconf is running... ")
+    try:
+        config = config_parser('/config/exporter.conf')
+    except ZeroConfException as e:
+        print(e)
+        sys.exit(0)
+
+    print("ZeroNetconf configuration retrieved ")
     user = config['default']['username']
     pwd= config['default']['password']
 
@@ -142,18 +149,19 @@ if __name__ == '__main__':
                     router = host_subsection['router']
                     peers = host_subsection['peers']
                     instance = host_subsection['instance']
-                    dev = Device(host=router, user=user, passwd=pwd)
+                    print(" connecting to %s" % router)
                     try:
-                        dev.open()
+                        capturedpref[router] = NeighsAdvRoutes(user, pwd, router, peers, instance).getRoutes()
+                    except ZeroConfException as e:
+                        print(e)
+                        continue
                     except ConnectError as err:
                         print("Cannot connect to device: {0}".format(err))
-                        sys.exit(1)
+                        continue
                     except Exception as err:
                         print(err)
+                print(" %s complete" % batch)
 
-                    capturedpref[router] = NeighAdvRoutes(dev, router, peers, instance).getRoutes()
-                    print(" %s complete" % batch)
-                    dev.close()
 
                 #update metrics
                 for host, peerhostpref in capturedpref.items():
@@ -163,7 +171,7 @@ if __name__ == '__main__':
                             med.labels(host, peer, pref).set(bgp_attr['med'])
 
                 time.sleep(sleeping_period)
-    #print (config)
+
 
 
 
