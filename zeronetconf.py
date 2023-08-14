@@ -82,6 +82,7 @@ class NeighsAdvRoutes:
 
 
         self.routeTable = {}
+        self.neighgroup = {}
 
         if self.peer_ips != None:
             for peer_ip in self.peer_ips:
@@ -89,11 +90,21 @@ class NeighsAdvRoutes:
                 for k,v in AdvertisedRouteTable(dev).get(table=self.instance,neighbor=peer_ip).items():
                     self.routeTable[peer_ip][k[0]] = dict(v)
 
+                test = NeighGroupTable(dev).get(neighbor_address=peer_ip)
+                for k,v in test.items():
+                    self.neighgroup[peer_ip] = dict(v)['group']
+
+        #print(self.neighgroup)
+
         dev.close()
+
         #calculate aspath_len
         for peerip in self.routeTable.keys():
             for prefix in self.routeTable[peerip].keys():
                 self.routeTable[peerip][prefix]['aspath_len'] = max(1,len(self.routeTable[peerip][prefix]['aspath'].split())-1)
+                self.routeTable[peerip][prefix]['peer_group'] = self.neighgroup[peerip]
+
+
 
     def getRoutes(self):
          # Output example --> routeTable[peerip][prefix][aspath|aspath_len|med]
@@ -112,7 +123,7 @@ class ZeroConfException(Exception):
 if __name__ == '__main__':
     print("ZeroNetconf is running... ")
     try:
-        config = config_parser('/config/exporter.conf')
+        config = config_parser('./config/exporter.conf')
     except ZeroConfException as e:
         print(e)
         sys.exit(0)
@@ -138,9 +149,9 @@ if __name__ == '__main__':
         if action == 'getBgpAdvPrefixes':
             # Create metrics
             aspath_len = Gauge('zm_bgpadvroutes_aslen', 'BGP Advertised Routes by ZeroTTL - AS path size',
-                               ['device', 'peer', 'prefix'])
+                               ['device', 'peer', 'peer_group', 'prefix', 'prefix_group'])
             med = Gauge('zm_bgpadvroutes_med', 'BGP Advertised Routes by ZeroTTL - med',
-                        ['device', 'peer', 'prefix'])
+                        ['device', 'peer', 'peer_group', 'prefix', 'prefix_group'])
 
             while True: #execute and wait...
                 print(" %s is starting" % batch)
@@ -158,17 +169,46 @@ if __name__ == '__main__':
                     except ConnectError as err:
                         print("Cannot connect to device: {0}".format(err))
                         continue
-                    except Exception as err:
-                        print(err)
+                    # except Exception as err:
+                    #     print(err)
                 print(" %s complete" % batch)
 
+                #grouping prefixes
+                group_set = set()
+                group_table = {}
+                group_dict = {}
+                pref_group = {}
+                for host, peerhostpref in capturedpref.items():
+                    for peer, hostpref in peerhostpref.items():
+                        for pref, bgp_attr in hostpref.items():
+                            if pref not in group_table.keys():
+                                group_table[pref]= {}
+                            group_table[pref][host+"_"+peer] = bgp_attr
+
+                for pref, host_peer_attr in group_table.items():
+                   aux_list = []
+                   for hostpeer, bgp_attr in host_peer_attr.items():
+                       aux_list.append( (hostpeer,bgp_attr['aspath_len'],bgp_attr['med']) )
+                   group_set.add(tuple(aux_list))
+                id = 1 #enumerate group
+                for group in group_set:
+                    group_dict["group"+str(id)] = group
+                    id=id+1
+
+                for pref, host_peer_attr in group_table.items():
+                    aux_list = []
+                    for hostpeer, bgp_attr in host_peer_attr.items():
+                        aux_list.append((hostpeer, bgp_attr['aspath_len'], bgp_attr['med']))
+                    for k,v in group_dict.items():
+                        if tuple(aux_list) == v:
+                            pref_group[pref] = k
 
                 #update metrics
                 for host, peerhostpref in capturedpref.items():
                     for peer, hostpref in peerhostpref.items():
-                        for pref, bgp_attr in hostpref.items():
-                            aspath_len.labels(host, peer, pref).set(bgp_attr['aspath_len'])
-                            med.labels(host, peer, pref).set(bgp_attr['med'])
+                        for pref, attr in hostpref.items():
+                            aspath_len.labels(host, peer, host+"_"+attr['peer_group'], pref, pref_group[pref]).set(attr['aspath_len'])
+                            med.labels(host, peer, host+"_"+attr['peer_group'], pref, pref_group[pref]).set(attr['med'])
 
                 time.sleep(sleeping_period)
 

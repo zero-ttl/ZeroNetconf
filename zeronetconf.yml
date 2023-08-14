@@ -14,3 +14,17 @@ _AdvertisedRouteView:
   fields:
     aspath: rt-entry/as-path
     med: rt-entry/med
+
+
+NeighGroupTable:
+  rpc: get-bgp-neighbor-information
+  args_key:
+    - neighbor-address
+  item: bgp-peer
+  key:
+    - peer-address
+  view: _NeighGroupView
+
+_NeighGroupView:
+  fields:
+    group: peer-group
