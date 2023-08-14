@@ -3,20 +3,15 @@ Prometheus Client populated by netconf retrieved data
 
 -- config file
 
-# mandatory section
-[default]
-# mandatory
-username = username
-# mandatory
-password = password
+
+[default] # mandatory section
+username = username # mandatory
+password = password # mandatory
 
 [actionbatch1]    # a single batch is supported
-# mandatory
-action = getBgpAdvPrefixes
-# mandatory
-server_port = 8000
-#mandatory (in s)
-sleeping_period = 300
+action = getBgpAdvPrefixes # mandatory
+server_port = 8000 # mandatory
+sleeping_period = 300 #mandatory (in s)
 
   [actionbatch1.router1]
     router = router1
